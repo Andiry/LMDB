@@ -61,8 +61,8 @@ test:	all
 	rm -rf testdb && mkdir testdb
 	./mtest && ./mdb_stat testdb
 
-liblmdb.a:	mdb.o midl.o
-	$(AR) rs $@ mdb.o midl.o
+liblmdb.a:	mdb.o midl.o pmem.o
+	$(AR) rs $@ mdb.o midl.o pmem.o
 
 liblmdb$(SOEXT):	mdb.lo midl.lo
 #	$(CC) $(LDFLAGS) -pthread -shared -Wl,-Bsymbolic -o $@ mdb.o midl.o $(SOLIBS)
@@ -79,7 +79,7 @@ mtest4:	mtest4.o liblmdb.a
 mtest5:	mtest5.o liblmdb.a
 mtest6:	mtest6.o liblmdb.a
 
-mdb.o: mdb.c lmdb.h midl.h
+mdb.o: mdb.c lmdb.h midl.h pmem.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c mdb.c
 
 midl.o: midl.c midl.h

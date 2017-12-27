@@ -227,6 +227,7 @@ union semun {
 
 #include "lmdb.h"
 #include "midl.h"
+#include "pmem.h"
 
 #if (BYTE_ORDER == LITTLE_ENDIAN) == (BYTE_ORDER == BIG_ENDIAN)
 # error "Unknown or unsupported endianness (BYTE_ORDER)"
@@ -4341,6 +4342,7 @@ mdb_env_map(MDB_env *env, void *addr)
 		return mdb_nt2win32(rc);
 	env->me_map = map;
 #else
+//	printf("%s: addr 0x%lx\n", __func__, (unsigned long)addr);
 #ifdef MDB_VL32
 	(void) flags;
 	env->me_map = mmap(addr, NUM_METAS * env->me_psize, PROT_READ, MAP_SHARED,
