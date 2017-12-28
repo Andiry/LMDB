@@ -2797,8 +2797,8 @@ mdb_env_sync0(MDB_env *env, int force, pgno_t numpgs)
 		if (env->me_flags & MDB_WRITEMAP) {
 			int flags = ((env->me_flags & MDB_MAPASYNC) && !force)
 				? MS_ASYNC : MS_SYNC;
-			if (MDB_MSYNC(env->me_map, env->me_psize * numpgs, flags))
-				rc = ErrCode();
+//			if (MDB_MSYNC(env->me_map, env->me_psize * numpgs, flags))
+//				rc = ErrCode();
 #ifdef _WIN32
 			else if (flags == MS_SYNC && MDB_FDATASYNC(env->me_fd))
 				rc = ErrCode();
@@ -4116,6 +4116,29 @@ mdb_env_init_meta(MDB_env *env, MDB_meta *meta)
 	return rc;
 }
 
+static void mdb_update_mp(MDB_meta *mp, MDB_txn *txn, mdb_size_t mapsize) {
+	mp->mm_mapsize = mapsize;
+	mp->mm_dbs[FREE_DBI] = txn->mt_dbs[FREE_DBI];
+	mp->mm_dbs[MAIN_DBI] = txn->mt_dbs[MAIN_DBI];
+	mp->mm_last_pg = txn->mt_next_pgno - 1;
+#if (__GNUC__ * 100 + __GNUC_MINOR__ >= 404) && /* TODO: portability */	\
+	!(defined(__i386__) || defined(__x86_64__))
+	/* LY: issue a memory barrier, if not x86. ITS#7969 */
+	__sync_synchronize();
+#endif
+	mp->mm_txnid = txn->mt_txnid;
+}
+
+static void mdb_update_mp_nonts(MDB_meta *mp, MDB_txn *txn, mdb_size_t mapsize) {
+	pgno_t new_last_page = txn->mt_next_pgno - 1;
+	pmem_memcpy_nodrain(&mp->mm_mapsize, &mapsize, sizeof(mdb_size_t));
+	pmem_memcpy_nodrain(mp->mm_dbs, txn->mt_dbs,
+			CORE_DBS * sizeof(MDB_db));
+	pmem_memcpy_nodrain(&mp->mm_last_pg, &new_last_page, sizeof(pgno_t));
+	pmem_memcpy_nodrain(&mp->mm_txnid, &txn->mt_txnid, sizeof(txnid_t));
+	pmem_drain();
+}
+
 /** Update the environment info to commit a transaction.
  * @param[in] txn the transaction that's being committed
  * @return 0 on success, non-zero on failure.
@@ -4150,16 +4173,7 @@ mdb_env_write_meta(MDB_txn *txn)
 		mapsize = env->me_mapsize;
 
 	if (flags & MDB_WRITEMAP) {
-		mp->mm_mapsize = mapsize;
-		mp->mm_dbs[FREE_DBI] = txn->mt_dbs[FREE_DBI];
-		mp->mm_dbs[MAIN_DBI] = txn->mt_dbs[MAIN_DBI];
-		mp->mm_last_pg = txn->mt_next_pgno - 1;
-#if (__GNUC__ * 100 + __GNUC_MINOR__ >= 404) && /* TODO: portability */	\
-	!(defined(__i386__) || defined(__x86_64__))
-		/* LY: issue a memory barrier, if not x86. ITS#7969 */
-		__sync_synchronize();
-#endif
-		mp->mm_txnid = txn->mt_txnid;
+		mdb_update_mp_nonts(mp, txn, mapsize);
 		if (!(flags & (MDB_NOMETASYNC|MDB_NOSYNC))) {
 			unsigned meta_size = env->me_psize;
 			rc = (env->me_flags & MDB_MAPASYNC) ? MS_ASYNC : MS_SYNC;
@@ -4169,10 +4183,10 @@ mdb_env_write_meta(MDB_txn *txn)
 			ptr -= r2;
 			meta_size += r2;
 #endif
-			if (MDB_MSYNC(ptr, meta_size, rc)) {
-				rc = ErrCode();
-				goto fail;
-			}
+//			if (MDB_MSYNC(ptr, meta_size, rc)) {
+//				rc = ErrCode();
+//				goto fail;
+//			}
 		}
 		goto done;
 	}
