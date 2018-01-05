@@ -7505,7 +7505,7 @@ mdb_cursor_put(MDB_cursor *mc, MDB_val *key, MDB_val *data,
 			if (key->mv_size != ksize)
 				return MDB_BAD_VALSIZE;
 			ptr = LEAF2KEY(mc->mc_pg[mc->mc_top], mc->mc_ki[mc->mc_top], ksize);
-			memcpy(ptr, key->mv_data, ksize);
+			pmem_memcpy_nodrain(ptr, key->mv_data, ksize);
 fix_parent:
 			/* if overwriting slot 0 of leaf, need to
 			 * update branch key if there is a parent page
@@ -7564,7 +7564,7 @@ more:
 
 				/* Back up original data item */
 				dkey.mv_size = olddata.mv_size;
-				dkey.mv_data = memcpy(fp+1, olddata.mv_data, olddata.mv_size);
+				dkey.mv_data = pmem_memcpy_nodrain(fp+1, olddata.mv_data, olddata.mv_size);
 
 				/* Make sub-page header for the dup items, with dummy body */
 				fp->mp_flags = P_LEAF|P_DIRTY|P_SUBP;
@@ -7645,9 +7645,9 @@ prep_subDB:
 				mp->mp_lower = fp->mp_lower;
 				mp->mp_upper = fp->mp_upper + offset;
 				if (fp_flags & P_LEAF2) {
-					memcpy(METADATA(mp), METADATA(fp), NUMKEYS(fp) * fp->mp_pad);
+					pmem_memcpy_nodrain(METADATA(mp), METADATA(fp), NUMKEYS(fp) * fp->mp_pad);
 				} else {
-					memcpy((char *)mp + mp->mp_upper + PAGEBASE, (char *)fp + fp->mp_upper + PAGEBASE,
+					pmem_memcpy_nodrain((char *)mp + mp->mp_upper + PAGEBASE, (char *)fp + fp->mp_upper + PAGEBASE,
 						olddata.mv_size - fp->mp_upper - PAGEBASE);
 					for (i=0; i<NUMKEYS(fp); i++)
 						mp->mp_ptrs[i] = fp->mp_ptrs[i] + offset;
@@ -7671,7 +7671,7 @@ current:
 			pgno_t pg;
 			int level, ovpages, dpages = OVPAGES(data->mv_size, env->me_psize);
 
-			memcpy(&pg, olddata.mv_data, sizeof(pg));
+			pmem_memcpy_nodrain(&pg, olddata.mv_data, sizeof(pg));
 			if ((rc2 = mdb_page_get(mc, pg, &omp, &level)) != 0)
 				return rc2;
 			ovpages = omp->mp_pages;
@@ -7714,18 +7714,18 @@ current:
 						 * compiler may copy words instead of bytes.
 						 */
 						off = (PAGEHDRSZ + data->mv_size) & -sizeof(size_t);
-						memcpy((size_t *)((char *)np + off),
+						pmem_memcpy_nodrain((size_t *)((char *)np + off),
 							(size_t *)((char *)omp + off), sz - off);
 						sz = PAGEHDRSZ;
 					}
-					memcpy(np, omp, sz); /* Copy beginning of page */
+					pmem_memcpy_nodrain(np, omp, sz); /* Copy beginning of page */
 					omp = np;
 				}
 				SETDSZ(leaf, data->mv_size);
 				if (F_ISSET(flags, MDB_RESERVE))
 					data->mv_data = METADATA(omp);
 				else
-					memcpy(METADATA(omp), data->mv_data, data->mv_size);
+					pmem_memcpy_nodrain(METADATA(omp), data->mv_data, data->mv_size);
 				return MDB_SUCCESS;
 			  }
 			}
@@ -7739,9 +7739,9 @@ current:
 			if (F_ISSET(flags, MDB_RESERVE))
 				data->mv_data = olddata.mv_data;
 			else if (!(mc->mc_flags & C_SUB))
-				memcpy(olddata.mv_data, data->mv_data, data->mv_size);
+				pmem_memcpy_nodrain(olddata.mv_data, data->mv_data, data->mv_size);
 			else {
-				memcpy(NODEKEY(leaf), key->mv_data, key->mv_size);
+				pmem_memcpy_nodrain(NODEKEY(leaf), key->mv_data, key->mv_size);
 				goto fix_parent;
 			}
 			return MDB_SUCCESS;
@@ -7842,7 +7842,7 @@ put_sub:
 			rc = mdb_cursor_put(&mc->mc_xcursor->mx_cursor, data, &xdata, xflags);
 			if (flags & F_SUBDATA) {
 				void *db = NODEDATA(leaf);
-				memcpy(db, &mc->mc_xcursor->mx_db, sizeof(MDB_db));
+				pmem_memcpy_nodrain(db, &mc->mc_xcursor->mx_db, sizeof(MDB_db));
 			}
 			insert_data = mc->mc_xcursor->mx_db.md_entries - ecount;
 		}
@@ -8117,7 +8117,7 @@ mdb_node_add(MDB_cursor *mc, indx_t indx,
 		if (dif > 0)
 			memmove(ptr+ksize, ptr, dif*ksize);
 		/* insert new key */
-		memcpy(ptr, key->mv_data, ksize);
+		pmem_memcpy_nodrain(ptr, key->mv_data, ksize);
 
 		/* Just using these for counting */
 		mp->mp_lower += sizeof(indx_t);
@@ -8177,24 +8177,24 @@ update:
 		SETPGNO(node,pgno);
 
 	if (key)
-		memcpy(NODEKEY(node), key->mv_data, key->mv_size);
+		pmem_memcpy_nodrain(NODEKEY(node), key->mv_data, key->mv_size);
 
 	if (IS_LEAF(mp)) {
 		ndata = NODEDATA(node);
 		if (ofp == NULL) {
 			if (F_ISSET(flags, F_BIGDATA))
-				memcpy(ndata, data->mv_data, sizeof(pgno_t));
+				pmem_memcpy_nodrain(ndata, data->mv_data, sizeof(pgno_t));
 			else if (F_ISSET(flags, MDB_RESERVE))
 				data->mv_data = ndata;
 			else
-				memcpy(ndata, data->mv_data, data->mv_size);
+				pmem_memcpy_nodrain(ndata, data->mv_data, data->mv_size);
 		} else {
-			memcpy(ndata, &ofp->mp_pgno, sizeof(pgno_t));
+			pmem_memcpy_nodrain(ndata, &ofp->mp_pgno, sizeof(pgno_t));
 			ndata = METADATA(ofp);
 			if (F_ISSET(flags, MDB_RESERVE))
 				data->mv_data = ndata;
 			else
-				memcpy(ndata, data->mv_data, data->mv_size);
+				pmem_memcpy_nodrain(ndata, data->mv_data, data->mv_size);
 		}
 	}
 
